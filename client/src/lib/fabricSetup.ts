@@ -1,145 +1,189 @@
+import { fabric } from 'fabric';
 
-import * as fabric from 'fabric';
-
-export interface FabricCanvasOptions {
-  width?: number;
-  height?: number;
-  backgroundColor?: string;
-}
-
-export const createFabricCanvas = (
-  canvasElement: HTMLCanvasElement,
-  options: FabricCanvasOptions = {}
-): fabric.Canvas => {
-  // Create a new Fabric.js canvas
-  const canvas = new fabric.Canvas(canvasElement, {
-    width: options.width || 1080,
-    height: options.height || 1920,
-    backgroundColor: options.backgroundColor || '#FFFFFF',
-    preserveObjectStacking: true,
+export const initCanvas = (id: string) => {
+  const canvas = new fabric.Canvas(id, {
+    height: 1920,
+    width: 1080,
+    backgroundColor: 'rgba(255, 255, 255, 1)',
     selection: false,
   });
-
   return canvas;
 };
 
-export const loadImageOntoCanvas = (
-  canvas: fabric.Canvas,
-  imageUrl: string,
-  options: {
-    scale?: number;
-    x?: number;
-    y?: number;
-    angle?: number;
-    selectable?: boolean;
-  } = {}
-): Promise<fabric.Image> => {
+export const addText = (canvas: fabric.Canvas, text: string) => {
+  const textbox = new fabric.Textbox(text, {
+    left: 50,
+    top: 50,
+    width: 300,
+    fontSize: 24,
+    fontFamily: 'Arial',
+    fill: '#000000',
+  });
+  canvas.add(textbox);
+  canvas.setActiveObject(textbox);
+};
+
+export const addImage = (canvas: fabric.Canvas, url: string) => {
+  fabric.Image.fromURL(url, (img) => {
+    if (img) {
+      img.scaleToWidth(200);
+      img.scaleToHeight(200);
+      canvas.add(img);
+      canvas.setActiveObject(img);
+    }
+  }, {
+    crossOrigin: 'anonymous'
+  });
+};
+
+export const loadImage = (url: string): Promise<fabric.Image> => {
   return new Promise((resolve, reject) => {
-    // Fix the fabric.Image.fromURL usage to match Fabric.js API
     fabric.Image.fromURL(
-      imageUrl,
-      (fabricImage: fabric.Image) => {
-        const canvasWidth = canvas.width || 1080;
-        const canvasHeight = canvas.height || 1920;
-        
-        // Default position to center if not specified
-        const x = options.x !== undefined ? canvasWidth * options.x : canvasWidth / 2;
-        const y = options.y !== undefined ? canvasHeight * options.y : canvasHeight / 2;
-        
-        // Set image properties
-        fabricImage.set({
-          originX: 'center',
-          originY: 'center',
-          left: x,
-          top: y,
-          angle: options.angle || 0,
-          selectable: options.selectable !== undefined ? options.selectable : true,
-        });
-        
-        // Scale image if needed
-        if (options.scale) {
-          fabricImage.scale(options.scale);
+      url, 
+      (img: fabric.Image) => {
+        if (img) {
+          resolve(img);
         } else {
-          // Default scale to fit within canvas (70% width max)
-          const maxWidth = canvasWidth * 0.7;
-          const imgScaleX = maxWidth / (fabricImage.width || 1);
-          fabricImage.scale(imgScaleX);
+          reject(new Error('Failed to load image'));
         }
-        
-        canvas.add(fabricImage);
-        canvas.renderAll();
-        resolve(fabricImage);
       },
-      { crossOrigin: 'anonymous' }
+      {
+        crossOrigin: 'anonymous'
+      }
     );
   });
 };
 
-export const addTextToCanvas = (
-  canvas: fabric.Canvas,
-  text: string,
-  options: {
-    x?: number;
-    y?: number;
-    fontSize?: number;
-    fontFamily?: string;
-    fontWeight?: string | number;
-    color?: string;
-    selectable?: boolean;
-  } = {}
-): fabric.IText => {
-  const canvasWidth = canvas.width || 1080;
-  const canvasHeight = canvas.height || 1920;
-  
-  // Default position to bottom center if not specified
-  const x = options.x !== undefined ? canvasWidth * options.x : canvasWidth / 2;
-  const y = options.y !== undefined ? canvasHeight * options.y : canvasHeight * 0.8;
-  
-  const textObj = new fabric.IText(text, {
-    fontFamily: options.fontFamily || 'Arial',
-    fontSize: options.fontSize || 32,
-    fontWeight: options.fontWeight || 'bold',
-    fill: options.color || '#000000',
-    originX: 'center',
-    originY: 'center',
-    left: x,
-    top: y,
-    selectable: options.selectable !== undefined ? options.selectable : true,
-    cornerColor: 'rgba(79, 70, 229, 0.8)',
-    cornerStrokeColor: 'rgba(79, 70, 229, 1)',
-    cornerSize: 10,
-    transparentCorners: false,
-    borderColor: 'rgba(79, 70, 229, 0.8)',
-    borderScaleFactor: 1.5,
-  });
-  
-  canvas.add(textObj);
-  canvas.renderAll();
-  
-  return textObj;
+export const cloneObject = (canvas: fabric.Canvas) => {
+  const activeObject = canvas.getActiveObject();
+  if (activeObject) {
+    activeObject.clone((cloned: fabric.Object) => {
+      cloned.set({
+        left: cloned.left ? cloned.left + 10 : 10,
+        top: cloned.top ? cloned.top + 10 : 10,
+        evented: true,
+      });
+      canvas.add(cloned);
+      canvas.setActiveObject(cloned);
+      canvas.requestRenderAll();
+    });
+  }
 };
 
-export const exportCanvasToImage = (canvas: fabric.Canvas): Promise<Blob> => {
-  return new Promise((resolve, reject) => {
-    if (!canvas) {
-      reject(new Error('Canvas is not initialized'));
-      return;
-    }
-    
-    try {
-      const dataUrl = canvas.toDataURL({
-        format: 'png',
-        quality: 1,
-        multiplier: 1
-      });
-      
-      // Convert data URL to Blob
-      fetch(dataUrl)
-        .then(res => res.blob())
-        .then(blob => resolve(blob))
-        .catch(error => reject(error));
-    } catch (error) {
-      reject(error);
-    }
+export const removeSelectedObject = (canvas: fabric.Canvas) => {
+  const activeObject = canvas.getActiveObject();
+  if (activeObject) {
+    canvas.remove(activeObject);
+    canvas.requestRenderAll();
+  }
+};
+
+export const sendToBack = (canvas: fabric.Canvas) => {
+  const activeObject = canvas.getActiveObject();
+  if (activeObject) {
+    activeObject.sendToBack();
+    canvas.requestRenderAll();
+  }
+};
+
+export const bringToFront = (canvas: fabric.Canvas) => {
+  const activeObject = canvas.getActiveObject();
+  if (activeObject) {
+    activeObject.bringToFront();
+    canvas.requestRenderAll();
+  }
+};
+
+export const toggleLock = (canvas: fabric.Canvas) => {
+  const activeObject = canvas.getActiveObject();
+  if (activeObject) {
+    activeObject.lockMovementX = !activeObject.lockMovementX;
+    activeObject.lockMovementY = !activeObject.lockMovementY;
+    activeObject.lockScalingX = !activeObject.lockScalingX;
+    activeObject.lockScalingY = !activeObject.lockScalingY;
+    activeObject.lockRotation = !activeObject.lockRotation;
+    canvas.requestRenderAll();
+  }
+};
+
+export const setBackgroundColor = (canvas: fabric.Canvas, color: string) => {
+  canvas.backgroundColor = color;
+  canvas.requestRenderAll();
+};
+
+export const setTextColor = (canvas: fabric.Canvas, color: string) => {
+  const activeObject = canvas.getActiveObject();
+  if (activeObject && activeObject instanceof fabric.Textbox) {
+    activeObject.set('fill', color);
+    canvas.requestRenderAll();
+  }
+};
+
+export const setTextSize = (canvas: fabric.Canvas, size: number) => {
+  const activeObject = canvas.getActiveObject();
+  if (activeObject && activeObject instanceof fabric.Textbox) {
+    activeObject.set('fontSize', size);
+    canvas.requestRenderAll();
+  }
+};
+
+export const setTextFontFamily = (canvas: fabric.Canvas, fontFamily: string) => {
+  const activeObject = canvas.getActiveObject();
+  if (activeObject && activeObject instanceof fabric.Textbox) {
+    activeObject.set('fontFamily', fontFamily);
+    canvas.requestRenderAll();
+  }
+};
+
+export const alignText = (canvas: fabric.Canvas, alignment: string) => {
+  const activeObject = canvas.getActiveObject();
+  if (activeObject && activeObject instanceof fabric.Textbox) {
+    activeObject.set('textAlign', alignment);
+    canvas.requestRenderAll();
+  }
+};
+
+export const makeTextBold = (canvas: fabric.Canvas) => {
+  const activeObject = canvas.getActiveObject();
+  if (activeObject && activeObject instanceof fabric.Textbox) {
+    const isBold = activeObject.fontWeight === 'bold';
+    activeObject.set('fontWeight', isBold ? 'normal' : 'bold');
+    canvas.requestRenderAll();
+  }
+};
+
+export const makeTextItalic = (canvas: fabric.Canvas) => {
+  const activeObject = canvas.getActiveObject();
+  if (activeObject && activeObject instanceof fabric.Textbox) {
+    const isItalic = activeObject.fontStyle === 'italic';
+    activeObject.set('fontStyle', isItalic ? 'normal' : 'italic');
+    canvas.requestRenderAll();
+  }
+};
+
+export const underlineText = (canvas: fabric.Canvas) => {
+  const activeObject = canvas.getActiveObject();
+  if (activeObject && activeObject instanceof fabric.Textbox) {
+    const isUnderlined = activeObject.underline === true;
+    activeObject.set('underline', !isUnderlined);
+    canvas.requestRenderAll();
+  }
+};
+
+export const setCanvasSize = (canvas: fabric.Canvas, width: number, height: number) => {
+  canvas.setWidth(width);
+  canvas.setHeight(height);
+  canvas.requestRenderAll();
+};
+
+export const clearCanvas = (canvas: fabric.Canvas) => {
+  canvas.clear();
+  canvas.backgroundColor = 'rgba(255, 255, 255, 1)';
+  canvas.requestRenderAll();
+};
+
+export const rasterize = (canvas: fabric.Canvas) => {
+  return canvas.toDataURL({
+    format: 'png'
   });
 };

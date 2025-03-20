@@ -8,15 +8,14 @@ import {
   ToastTitle,
   ToastViewport,
   type ToastActionElement,
-  type ToastProps,
 } from "@/components/ui/toast"
 
 export function Toaster() {
-  const { toast } = useToast()
+  const { _toasts } = useToast()
 
   return (
     <ToastProvider>
-      {toast._toasts?.map(function ({ id, title, description, action, ...props }: {
+      {_toasts?.map(function ({ id, title, description, action, ...props }: {
         id: string;
         title?: React.ReactNode;
         description?: React.ReactNode;

@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState } from 'react';
 import { useAppContext } from '@/contexts/AppContext';
 import { Button } from '@/components/ui/button';
@@ -21,7 +20,6 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ templates }) => {
   const [productImageObj, setProductImageObj] = useState<fabric.Image | null>(null);
   const [selectedBackground, setSelectedBackground] = useState('#FFFFFF');
 
-  // Initialize canvas when component mounts
   useEffect(() => {
     if (canvasRef.current && !fabricCanvasRef.current) {
       console.log('Initializing Fabric.js canvas in CanvasEditor');
@@ -34,19 +32,16 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ templates }) => {
       fabricCanvasRef.current = canvas;
       dispatch({ type: 'SET_FABRIC_CANVAS', payload: canvas });
       
-      // Auto-select first template if none is selected
       if (!state.selectedTemplate && templates.length > 0) {
         dispatch({ type: 'SET_TEMPLATE', payload: templates[0] });
       }
     }
 
-    // Handle resize
     const handleResize = () => {
       if (canvasContainerRef.current && fabricCanvasRef.current) {
         const container = canvasContainerRef.current;
         const containerWidth = container.clientWidth;
         
-        // Maintain 9:16 aspect ratio for Instagram Stories (1080x1920), limited by container width
         const newHeight = containerWidth * (1920/1080);
         
         setCanvasWidth(containerWidth);
@@ -60,10 +55,8 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ templates }) => {
       }
     };
 
-    // Initial sizing
     handleResize();
 
-    // Setup resize listener
     window.addEventListener('resize', handleResize);
     
     return () => {
@@ -71,24 +64,20 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ templates }) => {
     };
   }, [dispatch, templates, state.selectedTemplate, canvasWidth, canvasHeight, selectedBackground]);
 
-  // When template or processed image changes, update the canvas
   useEffect(() => {
     if (fabricCanvasRef.current && state.selectedTemplate && state.processedImageUrl) {
       console.log('Updating canvas with template and image');
       const canvas = fabricCanvasRef.current;
       canvas.clear();
       
-      // Set canvas background color using the property directly
       canvas.backgroundColor = selectedBackground;
       canvas.renderAll();
 
-      // First, load the template as background
       loadImageOntoCanvas(canvas, state.selectedTemplate.path, {
         selectable: false,
         x: 0.5,
         y: 0.5
       }).then(() => {
-        // Then, load the product image
         loadImageOntoCanvas(canvas, state.processedImageUrl!, {
           x: state.imagePosition.x,
           y: state.imagePosition.y,
@@ -98,7 +87,6 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ templates }) => {
         }).then((img) => {
           setProductImageObj(img);
           
-          // Listen for object modifications to update state
           img.on('modified', function() {
             if (canvas.width && canvas.height) {
               dispatch({
@@ -107,7 +95,7 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ templates }) => {
                   x: img.left! / canvas.width,
                   y: img.top! / canvas.height,
                   angle: img.angle || 0,
-                  scale: img.scaleX || 1, // Store the scale multiplier
+                  scale: img.scaleX || 1
                 }
               });
             }
@@ -121,7 +109,7 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ templates }) => {
     const sizePercent = parseFloat(e.target.value);
     
     if (productImageObj && fabricCanvasRef.current) {
-      const scaleFactor = sizePercent / 50; // 50 = default size (100%)
+      const scaleFactor = sizePercent / 50;
       
       productImageObj.scale(scaleFactor);
       
@@ -159,7 +147,6 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ templates }) => {
     setSelectedBackground(color);
     
     if (fabricCanvasRef.current) {
-      // Update the backgroundColor property directly
       fabricCanvasRef.current.backgroundColor = color;
       fabricCanvasRef.current.renderAll();
     }

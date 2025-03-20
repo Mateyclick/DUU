@@ -1,3 +1,4 @@
+
 import { fabric } from 'fabric';
 
 export const initCanvas = (id: string) => {
@@ -24,16 +25,14 @@ export const addText = (canvas: fabric.Canvas, text: string) => {
 };
 
 export const addImage = (canvas: fabric.Canvas, url: string) => {
-  fabric.Image.fromURL(url, (img) => {
+  fabric.Image.fromURL(url, (img: fabric.Image) => {
     if (img) {
       img.scaleToWidth(200);
       img.scaleToHeight(200);
       canvas.add(img);
       canvas.setActiveObject(img);
     }
-  }, {
-    crossOrigin: 'anonymous'
-  });
+  }, { crossOrigin: 'anonymous' });
 };
 
 export const loadImage = (url: string): Promise<fabric.Image> => {

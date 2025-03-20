@@ -1,96 +1,51 @@
-import axios from 'axios';
 
-/**
- * Resizes an image to a maximum width/height of 720px before processing
- * @param file The image file to resize
- * @returns Promise with the resized image as a Blob
- */
-const resizeImage = async (file: File): Promise<Blob> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        const MAX_SIZE = 720;
-        let width = img.width;
-        let height = img.height;
+import { REMOVE_BG_API_KEY } from '@/config';
 
-        // Resize only if the image is larger than MAX_SIZE
-        if (width > height && width > MAX_SIZE) {
-          height *= MAX_SIZE / width;
-          width = MAX_SIZE;
-        } else if (height > MAX_SIZE) {
-          width *= MAX_SIZE / height;
-          height = MAX_SIZE;
-        }
-
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          reject(new Error("Failed to get canvas context"));
-          return;
-        }
-        
-        ctx.drawImage(img, 0, 0, width, height);
-        canvas.toBlob(
-          (blob) => {
-            if (blob) {
-              resolve(blob);
-            } else {
-              reject(new Error("Failed to create blob from canvas"));
-            }
-          },
-          file.type,
-          0.9
-        );
-      };
-      img.onerror = () => reject(new Error("Failed to load image"));
-      img.src = e.target?.result as string;
-    };
-    reader.onerror = () => reject(new Error("Failed to read file"));
-    reader.readAsDataURL(file);
-  });
-};
-
-/**
- * Removes the background from an image using Remove.bg API or imgly background removal
- * @param file The image file to process
- * @returns Promise with the URL of the processed image
- */
 export const removeBg = async (file: File): Promise<string> => {
   try {
-    // Preprocess image - resize to max 720px
-    const resizedBlob = await resizeImage(file);
-    const resizedFile = new File([resizedBlob], file.name, { type: file.type });
-    
-    // Try server-side Remove.bg API first
-    const formData = new FormData();
-    formData.append('image', resizedFile);
-    
-    const response = await axios.post('/api/remove-bg', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-      responseType: 'blob',
-    });
-    
-    return URL.createObjectURL(response.data);
-  } catch (error) {
-    console.error('Server-side background removal failed, using client-side fallback', error);
-    
-    try {
-      // Preprocess image for the fallback method too
-      const resizedBlob = await resizeImage(file);
-      
-      // Use imgly client-side background removal as fallback
-      const { removeBackground } = await import('@imgly/background-removal');
-      const blob = await removeBackground(resizedBlob);
-      return URL.createObjectURL(blob);
-    } catch (fallbackError) {
-      console.error('Client-side background removal failed', fallbackError);
-      throw new Error('Failed to remove background. Please try another image or try again later.');
+    // For development, use a mock API that just returns the original image
+    // In a real app, you would call the actual remove.bg API
+    // This is to save API credits during development
+    if (!REMOVE_BG_API_KEY || REMOVE_BG_API_KEY === 'MOCK_API_KEY') {
+      console.log('Using mock remove.bg API');
+      return await mockRemoveBg(file);
     }
+
+    const formData = new FormData();
+    formData.append('image_file', file);
+    formData.append('size', 'auto');
+
+    const response = await fetch('https://api.remove.bg/v1.0/removebg', {
+      method: 'POST',
+      headers: {
+        'X-Api-Key': REMOVE_BG_API_KEY,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.errors?.[0]?.title || 'Failed to remove background');
+    }
+
+    const blob = await response.blob();
+    return URL.createObjectURL(blob);
+  } catch (error) {
+    console.error('Error removing background:', error);
+    throw error;
   }
+};
+
+// Mock remove.bg API for development purposes
+const mockRemoveBg = async (file: File): Promise<string> => {
+  // Simulate API processing time
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  
+  // Just return the original file as a data URL
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 };

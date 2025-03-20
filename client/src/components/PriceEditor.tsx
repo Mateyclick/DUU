@@ -1,24 +1,33 @@
+
 import React, { useEffect, useRef, useState } from 'react';
 import { useAppContext } from '@/contexts/AppContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { createFabricCanvas, loadImageOntoCanvas, addTextToCanvas } from '@/lib/fabricSetup';
+import { CANVAS_DIMENSIONS } from '@/config';
 import * as fabric from 'fabric';
 
 const PriceEditor: React.FC = () => {
   const { state, dispatch } = useAppContext();
-  const [canvasWidth, setCanvasWidth] = useState(1080);
-  const [canvasHeight, setCanvasHeight] = useState(1920); // Instagram Story dimensions
+  const [canvasWidth, setCanvasWidth] = useState(CANVAS_DIMENSIONS.width);
+  const [canvasHeight, setCanvasHeight] = useState(CANVAS_DIMENSIONS.height);
   const canvasContainerRef = useRef<HTMLDivElement>(null);
   const fabricCanvasRef = useRef<fabric.Canvas | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [priceTextObj, setPriceTextObj] = useState<fabric.IText | null>(null);
   const [price, setPrice] = useState(state.priceText.replace('$', ''));
 
+  // Initialize canvas when component mounts
   useEffect(() => {
-    // Initialize the canvas
     if (canvasRef.current && !fabricCanvasRef.current) {
-      fabricCanvasRef.current = new fabric.Canvas(canvasRef.current);
-      dispatch({ type: 'SET_FABRIC_CANVAS', payload: fabricCanvasRef.current });
+      console.log('Initializing Fabric.js canvas in PriceEditor');
+      const canvas = createFabricCanvas(canvasRef.current, {
+        width: canvasWidth,
+        height: canvasHeight
+      });
+      
+      fabricCanvasRef.current = canvas;
+      dispatch({ type: 'SET_FABRIC_CANVAS', payload: canvas });
     }
 
     // Handle resize
@@ -33,8 +42,10 @@ const PriceEditor: React.FC = () => {
         setCanvasWidth(containerWidth);
         setCanvasHeight(newHeight);
         
-        fabricCanvasRef.current.setWidth(containerWidth);
-        fabricCanvasRef.current.setHeight(newHeight);
+        fabricCanvasRef.current.setDimensions({
+          width: containerWidth,
+          height: newHeight
+        });
         fabricCanvasRef.current.renderAll();
       }
     };
@@ -48,94 +59,54 @@ const PriceEditor: React.FC = () => {
     return () => {
       window.removeEventListener('resize', handleResize);
     };
-  }, [dispatch]);
+  }, [dispatch, canvasWidth, canvasHeight]);
 
+  // Render the template, product image, and price text when anything changes
   useEffect(() => {
-    // Render the template, product image, and price text
     if (fabricCanvasRef.current && state.selectedTemplate && state.processedImageUrl) {
+      console.log('Updating canvas with template, image, and price text');
       const canvas = fabricCanvasRef.current;
       canvas.clear();
 
-      // Load template background
-      fabric.Image.fromURL(state.selectedTemplate.path, (templateImg) => {
-        // Scale to fit canvas
-        const scaleX = canvas.width! / templateImg.width!;
-        const scaleY = canvas.height! / templateImg.height!;
-        const scale = Math.max(scaleX, scaleY);
-        
-        templateImg.set({
-          scaleX: scale,
-          scaleY: scale,
-          originX: 'center',
-          originY: 'center',
-          left: canvas.width! / 2,
-          top: canvas.height! / 2,
-          selectable: false,
-        });
-        
-        canvas.add(templateImg);
-        canvas.sendToBack(templateImg);
-
+      // Add template background first
+      loadImageOntoCanvas(canvas, state.selectedTemplate.path, {
+        selectable: false,
+        x: 0.5,
+        y: 0.5
+      }).then(() => {
         // Add product image
-        fabric.Image.fromURL(state.processedImageUrl!, (productImg) => {
-          // Calculate dimensions based on template
-          const maxWidth = canvas.width! * 0.7;
-          const maxHeight = canvas.height! * 0.4;
-          
-          // Scale to fit max dimensions
-          const imgScaleX = maxWidth / productImg.width!;
-          const imgScaleY = maxHeight / productImg.height!;
-          const imgScale = Math.min(imgScaleX, imgScaleY);
-          
-          productImg.set({
-            scaleX: imgScale * state.imagePosition.scale,
-            scaleY: imgScale * state.imagePosition.scale,
-            originX: 'center',
-            originY: 'center',
-            left: canvas.width! * state.imagePosition.x,
-            top: canvas.height! * state.imagePosition.y,
-            angle: state.imagePosition.angle,
-            selectable: false,
-          });
-          
-          canvas.add(productImg);
-          
-          // Add price text
-          const priceText = new fabric.IText(state.priceText, {
-            fontFamily: state.priceStyle.fontFamily,
+        loadImageOntoCanvas(canvas, state.processedImageUrl!, {
+          x: state.imagePosition.x,
+          y: state.imagePosition.y,
+          angle: state.imagePosition.angle || 0,
+          scale: state.imagePosition.scale || 1,
+          selectable: false
+        }).then(() => {
+          // Add price text last
+          const textObj = addTextToCanvas(canvas, state.priceText, {
+            x: state.pricePosition.x,
+            y: state.pricePosition.y,
             fontSize: state.priceStyle.fontSize,
+            fontFamily: state.priceStyle.fontFamily,
             fontWeight: state.priceStyle.fontWeight,
-            fill: state.priceStyle.color,
-            originX: 'center',
-            originY: 'center',
-            left: canvas.width! * state.pricePosition.x,
-            top: canvas.height! * state.pricePosition.y,
-            cornerColor: 'rgba(79, 70, 229, 0.8)',
-            cornerStrokeColor: 'rgba(79, 70, 229, 1)',
-            cornerSize: 10,
-            transparentCorners: false,
-            borderColor: 'rgba(79, 70, 229, 0.8)',
-            borderScaleFactor: 1.5,
-            editingBorderColor: 'rgba(79, 70, 229, 0.8)',
+            color: state.priceStyle.color,
+            selectable: true
           });
           
-          canvas.add(priceText);
-          setPriceTextObj(priceText);
+          setPriceTextObj(textObj);
           
-          // Listen for object modifications
-          priceText.on('modified', function() {
+          // Listen for object modifications to update state
+          textObj.on('modified', function() {
             if (canvas.width && canvas.height) {
               dispatch({
                 type: 'SET_PRICE_POSITION',
                 payload: {
-                  x: priceText.left! / canvas.width,
-                  y: priceText.top! / canvas.height,
+                  x: textObj.left! / canvas.width,
+                  y: textObj.top! / canvas.height
                 }
               });
             }
           });
-          
-          canvas.renderAll();
         });
       });
     }
@@ -157,7 +128,7 @@ const PriceEditor: React.FC = () => {
     dispatch({ type: 'SET_PRICE_TEXT', payload: formattedPrice });
     
     if (priceTextObj && fabricCanvasRef.current) {
-      priceTextObj.set('text', formattedPrice);
+      priceTextObj.set({ text: formattedPrice });
       fabricCanvasRef.current.renderAll();
     }
   };
@@ -171,7 +142,7 @@ const PriceEditor: React.FC = () => {
     });
     
     if (priceTextObj && fabricCanvasRef.current) {
-      priceTextObj.set('fontSize', fontSize);
+      priceTextObj.set({ fontSize });
       fabricCanvasRef.current.renderAll();
     }
   };
@@ -183,7 +154,7 @@ const PriceEditor: React.FC = () => {
     });
     
     if (priceTextObj && fabricCanvasRef.current) {
-      priceTextObj.set('fill', color);
+      priceTextObj.set({ fill: color });
       fabricCanvasRef.current.renderAll();
     }
   };
@@ -210,8 +181,6 @@ const PriceEditor: React.FC = () => {
               >
                 <canvas 
                   ref={canvasRef} 
-                  width={canvasWidth} 
-                  height={canvasHeight}
                   className="w-full h-full"
                 ></canvas>
               </div>
@@ -258,11 +227,12 @@ const PriceEditor: React.FC = () => {
                   {['#0F2D52', '#FF0000', '#FFFFFF', '#000000', '#CCCCCC'].map(color => (
                     <div 
                       key={color} 
-                      className={`w-8 h-8 rounded-full cursor-pointer ${
-                        color === '#FFFFFF' ? 'border-2 border-gray-300' : 'border-2 border-white'
-                      }`}
+                      className={`w-8 h-8 rounded-full cursor-pointer border-2 ${
+                        state.priceStyle.color === color ? 'ring-2 ring-primary ring-offset-2' : ''
+                      } ${color === '#FFFFFF' ? 'border-gray-300' : 'border-white'}`}
                       style={{ backgroundColor: color }} 
                       onClick={() => handleColorChange(color)}
+                      title={color}
                     />
                   ))}
                 </div>

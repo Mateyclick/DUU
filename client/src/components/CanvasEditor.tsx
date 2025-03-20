@@ -1,7 +1,10 @@
+
 import React, { useEffect, useRef, useState } from 'react';
 import { useAppContext } from '@/contexts/AppContext';
 import { Button } from '@/components/ui/button';
 import { TemplateType } from '@/types';
+import { createFabricCanvas, loadImageOntoCanvas } from '@/lib/fabricSetup';
+import { CANVAS_DIMENSIONS } from '@/config';
 import * as fabric from 'fabric';
 
 interface CanvasEditorProps {
@@ -10,18 +13,31 @@ interface CanvasEditorProps {
 
 const CanvasEditor: React.FC<CanvasEditorProps> = ({ templates }) => {
   const { state, dispatch } = useAppContext();
-  const [canvasWidth, setCanvasWidth] = useState(1080);
-  const [canvasHeight, setCanvasHeight] = useState(1920); // Instagram Story dimensions
+  const [canvasWidth, setCanvasWidth] = useState(CANVAS_DIMENSIONS.width);
+  const [canvasHeight, setCanvasHeight] = useState(CANVAS_DIMENSIONS.height);
   const canvasContainerRef = useRef<HTMLDivElement>(null);
   const fabricCanvasRef = useRef<fabric.Canvas | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [productImageObj, setProductImageObj] = useState<fabric.Image | null>(null);
+  const [selectedBackground, setSelectedBackground] = useState('#FFFFFF');
 
+  // Initialize canvas when component mounts
   useEffect(() => {
-    // Initialize the canvas
     if (canvasRef.current && !fabricCanvasRef.current) {
-      fabricCanvasRef.current = new fabric.Canvas(canvasRef.current);
-      dispatch({ type: 'SET_FABRIC_CANVAS', payload: fabricCanvasRef.current });
+      console.log('Initializing Fabric.js canvas in CanvasEditor');
+      const canvas = createFabricCanvas(canvasRef.current, {
+        width: canvasWidth,
+        height: canvasHeight,
+        backgroundColor: selectedBackground
+      });
+      
+      fabricCanvasRef.current = canvas;
+      dispatch({ type: 'SET_FABRIC_CANVAS', payload: canvas });
+      
+      // Auto-select first template if none is selected
+      if (!state.selectedTemplate && templates.length > 0) {
+        dispatch({ type: 'SET_TEMPLATE', payload: templates[0] });
+      }
     }
 
     // Handle resize
@@ -36,8 +52,10 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ templates }) => {
         setCanvasWidth(containerWidth);
         setCanvasHeight(newHeight);
         
-        fabricCanvasRef.current.setWidth(containerWidth);
-        fabricCanvasRef.current.setHeight(newHeight);
+        fabricCanvasRef.current.setDimensions({
+          width: containerWidth,
+          height: newHeight
+        });
         fabricCanvasRef.current.renderAll();
       }
     };
@@ -51,103 +69,60 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ templates }) => {
     return () => {
       window.removeEventListener('resize', handleResize);
     };
-  }, [dispatch]);
+  }, [dispatch, templates, state.selectedTemplate, canvasWidth, canvasHeight, selectedBackground]);
 
+  // When template or processed image changes, update the canvas
   useEffect(() => {
-    // Render the template and product image when selectedTemplate changes
     if (fabricCanvasRef.current && state.selectedTemplate && state.processedImageUrl) {
+      console.log('Updating canvas with template and image');
       const canvas = fabricCanvasRef.current;
       canvas.clear();
+      
+      // Set canvas background color
+      canvas.setBackgroundColor(selectedBackground, canvas.renderAll.bind(canvas));
 
-      // Load template background
-      fabric.Image.fromURL(state.selectedTemplate.path, (templateImg) => {
-        // Scale to fit canvas
-        const scaleX = canvas.width! / templateImg.width!;
-        const scaleY = canvas.height! / templateImg.height!;
-        const scale = Math.max(scaleX, scaleY);
-        
-        templateImg.set({
-          scaleX: scale,
-          scaleY: scale,
-          originX: 'center',
-          originY: 'center',
-          left: canvas.width! / 2,
-          top: canvas.height! / 2,
-          selectable: false,
-        });
-        
-        canvas.add(templateImg);
-        canvas.sendToBack(templateImg);
-
-        // Add product image
-        fabric.Image.fromURL(state.processedImageUrl!, (productImg) => {
-          // Calculate dimensions based on template
-          const maxWidth = canvas.width! * 0.7;
-          const maxHeight = canvas.height! * 0.4;
+      // First, load the template as background
+      loadImageOntoCanvas(canvas, state.selectedTemplate.path, {
+        selectable: false,
+        x: 0.5,
+        y: 0.5
+      }).then(() => {
+        // Then, load the product image
+        loadImageOntoCanvas(canvas, state.processedImageUrl!, {
+          x: state.imagePosition.x,
+          y: state.imagePosition.y,
+          angle: state.imagePosition.angle || 0,
+          scale: state.imagePosition.scale || 1,
+          selectable: true
+        }).then((img) => {
+          setProductImageObj(img);
           
-          // Scale to fit max dimensions
-          const imgScaleX = maxWidth / productImg.width!;
-          const imgScaleY = maxHeight / productImg.height!;
-          const imgScale = Math.min(imgScaleX, imgScaleY);
-          
-          productImg.set({
-            scaleX: imgScale,
-            scaleY: imgScale,
-            originX: 'center',
-            originY: 'center',
-            left: canvas.width! * state.imagePosition.x,
-            top: canvas.height! * state.imagePosition.y,
-            angle: state.imagePosition.angle,
-            cornerColor: 'rgba(79, 70, 229, 0.8)',
-            cornerStrokeColor: 'rgba(79, 70, 229, 1)',
-            cornerSize: 10,
-            transparentCorners: false,
-            borderColor: 'rgba(79, 70, 229, 0.8)',
-            borderScaleFactor: 1.5,
-          });
-          
-          canvas.add(productImg);
-          setProductImageObj(productImg);
-          
-          // Listen for object modifications
-          productImg.on('modified', function() {
+          // Listen for object modifications to update state
+          img.on('modified', function() {
             if (canvas.width && canvas.height) {
               dispatch({
                 type: 'SET_IMAGE_POSITION',
                 payload: {
-                  x: productImg.left! / canvas.width,
-                  y: productImg.top! / canvas.height,
-                  angle: productImg.angle || 0,
-                  scale: productImg.scaleX! / imgScale, // Store the scale multiplier
+                  x: img.left! / canvas.width,
+                  y: img.top! / canvas.height,
+                  angle: img.angle || 0,
+                  scale: img.scaleX || 1, // Store the scale multiplier
                 }
               });
             }
           });
-          
-          canvas.renderAll();
         });
       });
     }
-  }, [state.selectedTemplate, state.processedImageUrl, state.imagePosition.x, state.imagePosition.y, state.imagePosition.angle, dispatch]);
+  }, [state.selectedTemplate, state.processedImageUrl, dispatch, selectedBackground]);
 
   const handleSizeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const sizePercent = parseInt(e.target.value);
+    const sizePercent = parseFloat(e.target.value);
     
     if (productImageObj && fabricCanvasRef.current) {
-      const canvas = fabricCanvasRef.current;
-      
-      // Calculate dimensions based on template
-      const maxWidth = canvas.width! * 0.7;
-      const maxHeight = canvas.height! * 0.4;
-      
-      // Original scale to fit max dimensions
-      const imgScaleX = maxWidth / productImageObj.width!;
-      const imgScaleY = maxHeight / productImageObj.height!;
-      const imgScale = Math.min(imgScaleX, imgScaleY);
-      
-      // Apply scale percentage
       const scaleFactor = sizePercent / 50; // 50 = default size (100%)
-      productImageObj.scale(imgScale * scaleFactor);
+      
+      productImageObj.scale(scaleFactor);
       
       dispatch({
         type: 'SET_IMAGE_POSITION',
@@ -156,7 +131,7 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ templates }) => {
         }
       });
       
-      canvas.renderAll();
+      fabricCanvasRef.current.renderAll();
     }
   };
 
@@ -164,13 +139,11 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ templates }) => {
     const rotation = parseInt(e.target.value);
     
     if (productImageObj && fabricCanvasRef.current) {
-      productImageObj.set('angle', rotation);
+      productImageObj.set({ angle: rotation });
       
       dispatch({
         type: 'SET_IMAGE_POSITION',
-        payload: {
-          angle: rotation
-        }
+        payload: { angle: rotation }
       });
       
       fabricCanvasRef.current.renderAll();
@@ -182,25 +155,12 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ templates }) => {
   };
 
   const handleBackgroundColor = (color: string) => {
-    if (!state.selectedTemplate || !fabricCanvasRef.current) return;
+    setSelectedBackground(color);
     
-    const canvas = fabricCanvasRef.current;
-    const bgObjects = canvas.getObjects().filter(obj => !obj.data?.isProduct);
-    
-    if (bgObjects.length > 0) {
-      const bgObject = bgObjects[0];
-      bgObject.set('fill', color);
-      canvas.renderAll();
-    } else {
-      const rect = new fabric.Rect({
-        width: canvas.width,
-        height: canvas.height,
-        fill: color,
-        selectable: false,
+    if (fabricCanvasRef.current) {
+      fabricCanvasRef.current.setBackgroundColor(color, () => {
+        fabricCanvasRef.current?.renderAll();
       });
-      canvas.add(rect);
-      canvas.sendToBack(rect);
-      canvas.renderAll();
     }
   };
 
@@ -226,8 +186,6 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ templates }) => {
               >
                 <canvas 
                   ref={canvasRef} 
-                  width={canvasWidth} 
-                  height={canvasHeight}
                   className="w-full h-full"
                 ></canvas>
               </div>
@@ -242,7 +200,7 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ templates }) => {
                     type="range" 
                     min="10" 
                     max="100" 
-                    value={state.imagePosition.scale * 50} 
+                    value={state.imagePosition.scale ? state.imagePosition.scale * 50 : 50} 
                     onChange={handleSizeChange}
                     className="w-full"
                   />
@@ -253,7 +211,7 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ templates }) => {
                     type="range" 
                     min="-180" 
                     max="180" 
-                    value={state.imagePosition.angle} 
+                    value={state.imagePosition.angle || 0} 
                     onChange={handleRotationChange}
                     className="w-full"
                   />
@@ -269,14 +227,19 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ templates }) => {
               {templates.map((template) => (
                 <div 
                   key={template.id}
-                  className={`border-2 ${state.selectedTemplate?.id === template.id ? 'border-primary' : 'border-gray-200'} rounded-lg p-1 cursor-pointer`}
+                  className={`border-2 ${state.selectedTemplate?.id === template.id ? 'border-primary' : 'border-gray-200'} rounded-lg p-1 cursor-pointer transition-all hover:border-primary/50`}
                   onClick={() => handleSelectTemplate(template)}
                 >
-                  <img 
-                    src={template.path} 
-                    alt={template.name} 
-                    className="w-full aspect-[9/16] object-cover rounded" 
-                  />
+                  <div className="w-full aspect-[9/16] bg-gray-100 rounded flex items-center justify-center">
+                    <img 
+                      src={template.path} 
+                      alt={template.name} 
+                      className="w-full h-full object-cover rounded" 
+                      onError={(e) => {
+                        e.currentTarget.src = 'https://via.placeholder.com/1080x1920?text=Template';
+                      }}
+                    />
+                  </div>
                 </div>
               ))}
             </div>
@@ -286,9 +249,10 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ templates }) => {
               {['#0F2D52', '#FF0000', '#FFFFFF', '#003366', '#990000', '#CCCCCC', '#000000', '#333333'].map((color) => (
                 <div 
                   key={color}
-                  className={`w-8 h-8 rounded-full cursor-pointer border-2 ${color === '#FFFFFF' ? 'border-gray-300' : 'border-white'}`}
+                  className={`w-8 h-8 rounded-full cursor-pointer border-2 ${selectedBackground === color ? 'ring-2 ring-primary ring-offset-2' : ''} ${color === '#FFFFFF' ? 'border-gray-300' : 'border-white'}`}
                   style={{ backgroundColor: color }}
                   onClick={() => handleBackgroundColor(color)}
+                  title={color}
                 />
               ))}
             </div>

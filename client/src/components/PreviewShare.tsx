@@ -1,23 +1,35 @@
+
 import React, { useEffect, useRef, useState } from 'react';
 import { useAppContext } from '@/contexts/AppContext';
 import { Button } from '@/components/ui/button';
+import { createFabricCanvas, loadImageOntoCanvas, addTextToCanvas, exportCanvasToImage } from '@/lib/fabricSetup';
+import { CANVAS_DIMENSIONS } from '@/config';
 import * as fabric from 'fabric';
+import { useToast } from '@/hooks/use-toast';
 
 const PreviewShare: React.FC = () => {
   const { state, dispatch } = useAppContext();
-  const [canvasWidth, setCanvasWidth] = useState(1080);
-  const [canvasHeight, setCanvasHeight] = useState(1920); // Instagram Story dimensions
+  const { toast } = useToast();
+  const [canvasWidth, setCanvasWidth] = useState(CANVAS_DIMENSIONS.width);
+  const [canvasHeight, setCanvasHeight] = useState(CANVAS_DIMENSIONS.height);
   const [usageCount, setUsageCount] = useState(parseInt(localStorage.getItem("germancitoUsage") || "0"));
   const [finalImageUrl, setFinalImageUrl] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
   const canvasContainerRef = useRef<HTMLDivElement>(null);
   const fabricCanvasRef = useRef<fabric.Canvas | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  // Initialize canvas when component mounts
   useEffect(() => {
-    // Initialize the canvas
     if (canvasRef.current && !fabricCanvasRef.current) {
-      fabricCanvasRef.current = new fabric.Canvas(canvasRef.current);
-      dispatch({ type: 'SET_FABRIC_CANVAS', payload: fabricCanvasRef.current });
+      console.log('Initializing Fabric.js canvas in PreviewShare');
+      const canvas = createFabricCanvas(canvasRef.current, {
+        width: canvasWidth,
+        height: canvasHeight
+      });
+      
+      fabricCanvasRef.current = canvas;
+      dispatch({ type: 'SET_FABRIC_CANVAS', payload: canvas });
     }
 
     // Handle resize
@@ -32,8 +44,10 @@ const PreviewShare: React.FC = () => {
         setCanvasWidth(containerWidth);
         setCanvasHeight(newHeight);
         
-        fabricCanvasRef.current.setWidth(containerWidth);
-        fabricCanvasRef.current.setHeight(newHeight);
+        fabricCanvasRef.current.setDimensions({
+          width: containerWidth,
+          height: newHeight
+        });
         fabricCanvasRef.current.renderAll();
       }
     };
@@ -47,82 +61,55 @@ const PreviewShare: React.FC = () => {
     return () => {
       window.removeEventListener('resize', handleResize);
     };
-  }, [dispatch]);
+  }, [dispatch, canvasWidth, canvasHeight]);
 
+  // Render the template, product image, and price text when anything changes
   useEffect(() => {
-    // Render the template, product image, and price text
     if (fabricCanvasRef.current && state.selectedTemplate && state.processedImageUrl) {
+      console.log('Generating final preview');
       const canvas = fabricCanvasRef.current;
       canvas.clear();
+      setIsGenerating(true);
 
-      // Load template background
-      fabric.Image.fromURL(state.selectedTemplate.path, (templateImg) => {
-        // Scale to fit canvas
-        const scaleX = canvas.width! / templateImg.width!;
-        const scaleY = canvas.height! / templateImg.height!;
-        const scale = Math.max(scaleX, scaleY);
-        
-        templateImg.set({
-          scaleX: scale,
-          scaleY: scale,
-          originX: 'center',
-          originY: 'center',
-          left: canvas.width! / 2,
-          top: canvas.height! / 2,
-          selectable: false,
-        });
-        
-        canvas.add(templateImg);
-        canvas.sendToBack(templateImg);
-
+      // Add template background first
+      loadImageOntoCanvas(canvas, state.selectedTemplate.path, {
+        selectable: false,
+        x: 0.5,
+        y: 0.5
+      }).then(() => {
         // Add product image
-        fabric.Image.fromURL(state.processedImageUrl!, (productImg) => {
-          // Calculate dimensions based on template
-          const maxWidth = canvas.width! * 0.7;
-          const maxHeight = canvas.height! * 0.4;
-          
-          // Scale to fit max dimensions
-          const imgScaleX = maxWidth / productImg.width!;
-          const imgScaleY = maxHeight / productImg.height!;
-          const imgScale = Math.min(imgScaleX, imgScaleY);
-          
-          productImg.set({
-            scaleX: imgScale * state.imagePosition.scale,
-            scaleY: imgScale * state.imagePosition.scale,
-            originX: 'center',
-            originY: 'center',
-            left: canvas.width! * state.imagePosition.x,
-            top: canvas.height! * state.imagePosition.y,
-            angle: state.imagePosition.angle,
-            selectable: false,
-          });
-          
-          canvas.add(productImg);
-          
-          // Add price text
-          const priceText = new fabric.IText(state.priceText, {
-            fontFamily: state.priceStyle.fontFamily,
+        loadImageOntoCanvas(canvas, state.processedImageUrl!, {
+          x: state.imagePosition.x,
+          y: state.imagePosition.y,
+          angle: state.imagePosition.angle || 0,
+          scale: state.imagePosition.scale || 1,
+          selectable: false
+        }).then(() => {
+          // Add price text last
+          addTextToCanvas(canvas, state.priceText, {
+            x: state.pricePosition.x,
+            y: state.pricePosition.y,
             fontSize: state.priceStyle.fontSize,
+            fontFamily: state.priceStyle.fontFamily,
             fontWeight: state.priceStyle.fontWeight,
-            fill: state.priceStyle.color,
-            originX: 'center',
-            originY: 'center',
-            left: canvas.width! * state.pricePosition.x,
-            top: canvas.height! * state.pricePosition.y,
-            selectable: false,
+            color: state.priceStyle.color,
+            selectable: false
           });
-          
-          canvas.add(priceText);
-          
+
           // Generate final image
-          const dataUrl = canvas.toDataURL({
-            format: 'png',
-            quality: 1,
-            multiplier: 1
+          exportCanvasToImage(canvas).then(blob => {
+            const dataUrl = URL.createObjectURL(blob);
+            setFinalImageUrl(dataUrl);
+            setIsGenerating(false);
+          }).catch(error => {
+            console.error('Error generating final image:', error);
+            setIsGenerating(false);
+            toast({
+              title: "Error",
+              description: "No se pudo generar la imagen final",
+              variant: "destructive"
+            });
           });
-          setFinalImageUrl(dataUrl);
-          
-          canvas.renderAll();
         });
       });
     }
@@ -133,18 +120,37 @@ const PreviewShare: React.FC = () => {
     state.priceStyle, 
     state.pricePosition, 
     state.imagePosition, 
-    dispatch
+    dispatch,
+    toast
   ]);
 
   const handleDownload = () => {
-    if (!finalImageUrl) return;
+    if (!finalImageUrl) {
+      toast({
+        title: "Error",
+        description: "No hay imagen para descargar",
+        variant: "destructive"
+      });
+      return;
+    }
     
+    // Update usage count in localStorage
+    const newCount = usageCount + 1;
+    localStorage.setItem("germancitoUsage", newCount.toString());
+    setUsageCount(newCount);
+    
+    // Create and trigger download link
     const link = document.createElement('a');
     link.href = finalImageUrl;
     link.download = 'oferta-final.png';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    
+    toast({
+      title: "¡Listo!",
+      description: "Imagen descargada correctamente",
+    });
   };
 
   const handleStartOver = () => {
@@ -168,10 +174,16 @@ const PreviewShare: React.FC = () => {
                 ref={canvasContainerRef} 
                 className="relative bg-white overflow-hidden rounded-lg shadow-sm aspect-[9/16]"
               >
+                {isGenerating && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/10 z-10">
+                    <div className="bg-white p-4 rounded-lg shadow-lg">
+                      <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-2"></div>
+                      <p className="text-sm">Generando imagen final...</p>
+                    </div>
+                  </div>
+                )}
                 <canvas 
                   ref={canvasRef} 
-                  width={canvasWidth} 
-                  height={canvasHeight}
                   className="w-full h-full"
                 ></canvas>
               </div>
@@ -181,6 +193,7 @@ const PreviewShare: React.FC = () => {
               <Button 
                 className="bg-[#0F2D52] hover:bg-[#0a1f38] text-white py-3 px-8 rounded-lg font-semibold flex items-center gap-2 transition-colors"
                 onClick={handleDownload}
+                disabled={isGenerating || !finalImageUrl}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                   <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
@@ -236,14 +249,15 @@ const PreviewShare: React.FC = () => {
                     </div>
                   </div>
                 </div>
+                
                 <div className="flex gap-2">
-                  <button className="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-2 rounded flex items-center justify-center gap-1">
+                  <button className="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-2 rounded flex items-center justify-center gap-1 transition-colors">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M9 8h-3v4h3v12h5v-12h3.642l.358-4h-4v-1.667c0-.955.192-1.333 1.115-1.333h2.885v-5h-3.808c-3.596 0-5.192 1.583-5.192 4.615v3.385z" />
                     </svg>
                     <span className="text-sm">Facebook</span>
                   </button>
-                  <button className="flex-1 bg-[#0F2D52] hover:bg-[#0a1f38] text-white py-2 rounded flex items-center justify-center gap-1">
+                  <button className="flex-1 bg-[#0F2D52] hover:bg-[#0a1f38] text-white py-2 rounded flex items-center justify-center gap-1 transition-colors">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M19.633 7.997c.013.175.013.349.013.523 0 5.325-4.053 11.461-11.46 11.461-2.282 0-4.402-.661-6.186-1.809.324.037.636.05.973.05a8.07 8.07 0 0 0 5.001-1.721 4.036 4.036 0 0 1-3.767-2.793c.249.037.499.062.761.062.361 0 .724-.05 1.061-.137a4.027 4.027 0 0 1-3.23-3.953v-.05c.537.299 1.16.486 1.82.511a4.022 4.022 0 0 1-1.796-3.354c0-.748.199-1.434.548-2.032a11.457 11.457 0 0 0 8.306 4.215c-.062-.3-.1-.599-.1-.899a4.026 4.026 0 0 1 4.028-4.028c1.16 0 2.207.486 2.943 1.272a7.957 7.957 0 0 0 2.556-.973 4.02 4.02 0 0 1-1.771 2.22 8.073 8.073 0 0 0 2.319-.624 8.645 8.645 0 0 1-2.019 2.083z"></path>
                     </svg>

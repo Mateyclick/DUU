@@ -1,39 +1,32 @@
-import React, { useEffect } from "react";
-import { useAppContext } from "@/contexts/AppContext";
-import Header from "@/components/Header";
-import Footer from "@/components/Footer";
-import ProgressSteps from "@/components/ProgressSteps";
-import ImageUploader from "@/components/ImageUploader";
-import CanvasEditor from "@/components/CanvasEditor";
-import PriceEditor from "@/components/PriceEditor";
-import PreviewShare from "@/components/PreviewShare";
-import LoadingOverlay from "@/components/LoadingOverlay";
-import ErrorMessage from "@/components/ErrorMessage";
-import { useQuery } from "@tanstack/react-query";
-import { TemplateType } from "@/types";
+
+import React, { useEffect, useState } from 'react';
+import { useAppContext } from '@/contexts/AppContext';
+import ProgressSteps from '@/components/ProgressSteps';
+import ImageUploader from '@/components/ImageUploader';
+import CanvasEditor from '@/components/CanvasEditor';
+import PriceEditor from '@/components/PriceEditor';
+import PreviewShare from '@/components/PreviewShare';
+import LoadingOverlay from '@/components/LoadingOverlay';
+import ErrorMessage from '@/components/ErrorMessage';
+import { DEFAULT_TEMPLATES } from '@/config';
+import { TemplateType } from '@/types';
 
 const Home: React.FC = () => {
-  const { state, dispatch } = useAppContext();
-
-  // Fetch templates from config.json
-  const { data: templates } = useQuery<TemplateType[]>({
-    queryKey: ["/templates/config.json"],
-    staleTime: Infinity,
-  });
-
-  // Set first template as selected when templates are loaded
+  const { state } = useAppContext();
+  const [templates, setTemplates] = useState<TemplateType[]>([]);
+  
   useEffect(() => {
-    if (templates && templates.length > 0 && !state.selectedTemplate) {
-      dispatch({ type: "SET_TEMPLATE", payload: templates[0] });
-    }
-  }, [templates, state.selectedTemplate, dispatch]);
+    // In a real app, you might fetch templates from an API
+    // For now, we'll use the default templates from config
+    setTemplates(DEFAULT_TEMPLATES);
+  }, []);
 
   const renderCurrentStep = () => {
     switch (state.currentStep) {
       case 1:
         return <ImageUploader />;
       case 2:
-        return <CanvasEditor templates={templates || []} />;
+        return <CanvasEditor templates={templates} />;
       case 3:
         return <PriceEditor />;
       case 4:
@@ -44,20 +37,23 @@ const Home: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Header />
-      <main className="flex-grow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <ProgressSteps />
-          
-          <div className="bg-white rounded-lg shadow-sm overflow-hidden relative">
-            {state.error && <ErrorMessage />}
-            {renderCurrentStep()}
-            {state.isLoading && <LoadingOverlay />}
-          </div>
+    <div className="container mx-auto px-4 py-8 max-w-6xl page-transition">
+      <div className="text-center mb-8">
+        <h1 className="text-3xl font-bold mb-2 text-primary scale-in">OfertaBuilder</h1>
+        <p className="text-gray-600 max-w-2xl mx-auto slide-in-up">
+          Create professional offer images for WhatsApp and Instagram in just a few steps
+        </p>
+      </div>
+      
+      <ProgressSteps />
+      
+      <div className="bg-white rounded-xl shadow-lg overflow-hidden mb-8 fade-in">
+        <div className="relative">
+          {state.loading && <LoadingOverlay />}
+          <ErrorMessage />
+          {renderCurrentStep()}
         </div>
-      </main>
-      <Footer />
+      </div>
     </div>
   );
 };

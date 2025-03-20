@@ -1,3 +1,4 @@
+
 import express, { type Express } from "express";
 import fs from "fs";
 import path, { dirname } from "path";
@@ -26,7 +27,8 @@ export async function setupVite(app: Express, server: Server) {
   const serverOptions = {
     middlewareMode: true,
     hmr: { server },
-    allowedHosts: true,
+    // Fix the allowedHosts type by setting it to true only
+    allowedHosts: true as true,
   };
 
   const vite = await createViteServer({

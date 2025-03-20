@@ -35,9 +35,10 @@ export const loadImageOntoCanvas = (
   } = {}
 ): Promise<fabric.Image> => {
   return new Promise((resolve, reject) => {
+    // Fix the fabric.Image.fromURL usage to match Fabric.js API
     fabric.Image.fromURL(
       imageUrl,
-      (img) => {
+      (fabricImage: fabric.Image) => {
         const canvasWidth = canvas.width || 1080;
         const canvasHeight = canvas.height || 1920;
         
@@ -46,7 +47,7 @@ export const loadImageOntoCanvas = (
         const y = options.y !== undefined ? canvasHeight * options.y : canvasHeight / 2;
         
         // Set image properties
-        img.set({
+        fabricImage.set({
           originX: 'center',
           originY: 'center',
           left: x,
@@ -57,17 +58,17 @@ export const loadImageOntoCanvas = (
         
         // Scale image if needed
         if (options.scale) {
-          img.scale(options.scale);
+          fabricImage.scale(options.scale);
         } else {
           // Default scale to fit within canvas (70% width max)
           const maxWidth = canvasWidth * 0.7;
-          const imgScaleX = maxWidth / (img.width || 1);
-          img.scale(imgScaleX);
+          const imgScaleX = maxWidth / (fabricImage.width || 1);
+          fabricImage.scale(imgScaleX);
         }
         
-        canvas.add(img);
+        canvas.add(fabricImage);
         canvas.renderAll();
-        resolve(img);
+        resolve(fabricImage);
       },
       { crossOrigin: 'anonymous' }
     );

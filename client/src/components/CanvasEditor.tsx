@@ -78,8 +78,9 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ templates }) => {
       const canvas = fabricCanvasRef.current;
       canvas.clear();
       
-      // Set canvas background color
-      canvas.setBackgroundColor(selectedBackground, canvas.renderAll.bind(canvas));
+      // Set canvas background color using the property directly
+      canvas.backgroundColor = selectedBackground;
+      canvas.renderAll();
 
       // First, load the template as background
       loadImageOntoCanvas(canvas, state.selectedTemplate.path, {
@@ -158,9 +159,9 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({ templates }) => {
     setSelectedBackground(color);
     
     if (fabricCanvasRef.current) {
-      fabricCanvasRef.current.setBackgroundColor(color, () => {
-        fabricCanvasRef.current?.renderAll();
-      });
+      // Update the backgroundColor property directly
+      fabricCanvasRef.current.backgroundColor = color;
+      fabricCanvasRef.current.renderAll();
     }
   };
 
